@@ -15,7 +15,7 @@ export const EditorCanvas = forwardRef<HTMLCanvasElement | null, EditorCanvasPro
     const canvasRef = useRef<HTMLCanvasElement>(null)
 
     // Forward the canvas ref to parent components
-    useImperativeHandle(ref, () => canvasRef.current)
+    useImperativeHandle(ref, () => canvasRef.current || document.createElement('canvas'))
 
     useEffect(() => {
       const canvas = canvasRef.current
