@@ -75,3 +75,37 @@
   }
 }
 
+/* FileRobot Editor Overrides */
+.SfxPointer {
+  cursor: pointer;
+}
+
+.FIE_root {
+  font-family: inherit !important;
+}
+
+.FIE_topbar {
+  background-color: hsl(var(--background)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+}
+
+.FIE_tabs-container {
+  background-color: hsl(var(--background)) !important;
+}
+
+.FIE_tool-text {
+  color: hsl(var(--foreground)) !important;
+}
+
+.FIE_canvas-container {
+  background-color: hsl(var(--muted)) !important;
+}
+
+/* Make sure the editor fills the available space */
+.FIE_editor-wrapper,
+.FIE_editor-wrapper-closes,
+.FIE_editor-main,
+.FIE_editor {
+  height: 100% !important;
+}
+

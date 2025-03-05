@@ -13,8 +13,7 @@ import {
   deleteSavedEdit,
   downloadImage 
 } from "@/utils/editor-storage";
-import { compressImage } from "@/utils/image-utils";
-import { ImageEditorTools } from "@/components/image-editor-tools";
+import { ProImageEditor } from "@/components/pro-image-editor";
 import { 
   Dialog, 
   DialogContent, 
@@ -41,6 +40,8 @@ import {
   Image as ImageIcon,
   Home,
   Grid,
+  Edit,
+  Power,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,12 +50,13 @@ import { AlertCircle } from "lucide-react";
 
 export default function EditorPage() {
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [originalImage, setOriginalImage] = useState<string | null>(null);
+  const [editingImage, setEditingImage] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string>("");
   const [savedEdits, setSavedEdits] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingEdits, setIsLoadingEdits] = useState(false);
   const [isShowingSavedDialog, setIsShowingSavedDialog] = useState(false);
-  const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [editingError, setEditingError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -96,23 +98,36 @@ export default function EditorPage() {
     reader.readAsDataURL(file);
   };
 
-  // Handle image change from editor tools
-  const handleImageChange = (newImageDataUrl: string) => {
-    try {
-      console.log("Received updated image from editor tools");
-      setImageDataUrl(newImageDataUrl);
-      setEditingError(null);
-    } catch (error) {
-      console.error("Error updating image:", error);
-      setEditingError(`Error applying edits: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  // Start editing the current image
+  const startEditing = () => {
+    setEditingImage(imageDataUrl);
   };
 
-  // Reset to original image
-  const handleResetImage = () => {
-    if (originalImage) {
-      setImageDataUrl(originalImage);
+  // Handle save from the editor
+  const handleEditorSave = (editedImageUrl: string, imageFile: File) => {
+    // Update the displayed image
+    setImageDataUrl(editedImageUrl);
+    setEditingImage(null);
+    
+    // Update name if not already set
+    if (!imageName) {
+      setImageName(imageFile.name);
     }
+    
+    toast({
+      title: "Image edited successfully",
+      description: "Your changes have been applied",
+    });
+  };
+
+  // Handle cancel from editor
+  const handleEditorCancel = () => {
+    setEditingImage(null);
+    toast({
+      title: "Editing cancelled",
+      description: "No changes were applied",
+      variant: "default",
+    });
   };
 
   // Save current edit to localStorage
@@ -130,16 +145,12 @@ export default function EditorPage() {
       // Show saving indicator
       toast({
         title: "Saving locally...",
-        description: "Compressing image for storage",
       });
       
       const editName = imageName || `Edit ${new Date().toLocaleString()}`;
       
-      // Save with compression to avoid quota issues
-      await saveEditToLocalStorage(imageDataUrl, editName, { 
-        quality: 0.8, 
-        maxSize: 1200 
-      });
+      // Save to local storage
+      await saveEditToLocalStorage(imageDataUrl, editName);
       
       loadSavedEdits(); // Refresh the list
       
@@ -204,7 +215,6 @@ export default function EditorPage() {
     setImageName(edit.name);
     setIsShowingSavedDialog(false);
     
-    // Success message with proper handling in case dataUrl is very large
     toast({
       title: "Edit loaded",
       description: `Loaded: ${edit.name}`,
@@ -259,17 +269,13 @@ export default function EditorPage() {
     setUploadError(null);
     
     try {
-      console.log("Starting save to Google Drive process...");
-      
-      // Step 1: Get the access token
+      // Get access token
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error("Failed to get access token. Please sign in again.");
       }
       
-      console.log("Got access token, preparing image...");
-      
-      // Step 2: Convert data URL to blob with proper type
+      // Convert data URL to blob
       const dataUrlParts = imageDataUrl.split(',');
       const mimeMatch = dataUrlParts[0].match(/:(.*?);/);
       const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
@@ -284,31 +290,22 @@ export default function EditorPage() {
       
       const blob = new Blob([arrayBuffer], { type: mimeType });
       
-      // Step 3: Generate a filename
+      // Generate filename
       const filename = imageName || `pixelvault-image-${new Date().toISOString().substring(0, 19).replace(/[-:T]/g, '')}.png`;
       
-      console.log(`Uploading image as "${filename}"...`);
-      
-      // Step 4: Upload to Google Drive
+      // Upload to Google Drive
       const result = await uploadImageToGoogleDrive(blob, filename, accessToken);
       
-      console.log("Upload successful!", result);
-      
-      // Show success message
       toast({
         title: "Saved to Google Drive",
         description: `Image saved as "${filename}"`,
       });
-      
-      // Also save locally as backup
-      await saveToLocalStorage();
     } catch (error: any) {
       const errorMessage = error.message || "Unknown error occurred";
       setUploadError(errorMessage);
       
       console.error("Upload failed:", error);
       
-      // Show error message to user
       toast({
         title: "Upload failed",
         description: errorMessage,
@@ -375,6 +372,32 @@ export default function EditorPage() {
     }
   };
 
+  // When the editor is active, show it in a fullscreen view
+  if (editingImage) {
+    return (
+      <div className="fixed inset-0 bg-background z-50 flex flex-col">
+        <div className="bg-muted p-4 flex items-center justify-between">
+          <h1 className="font-bold text-xl">Photo Editor</h1>
+          <Button 
+            variant="outline" 
+            onClick={handleEditorCancel}
+            className="gap-2"
+          >
+            <Power className="h-4 w-4" />
+            Exit Editor
+          </Button>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <ProImageEditor 
+            imageUrl={editingImage}
+            onSave={handleEditorSave}
+            onCancel={handleEditorCancel}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <header className="flex justify-between items-center mb-6 border-b pb-4">
@@ -398,12 +421,12 @@ export default function EditorPage() {
       </header>
 
       <main>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Main Image Editor Panel */}
-          <Card className="md:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-6">
+          {/* Main Image Panel */}
+          <Card className="lg:col-span-4">
             <CardHeader>
               <CardTitle>Image Editor</CardTitle>
-              <CardDescription>Upload, edit, and save your images</CardDescription>
+              <CardDescription>Upload an image and start editing</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div 
@@ -456,140 +479,151 @@ export default function EditorPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
 
-              {imageDataUrl && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="image-name" className="w-24">Image Name:</Label>
+          {/* Action Panel */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Actions</CardTitle>
+              <CardDescription>Edit and save your image</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {imageDataUrl ? (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="image-name">Image Name</Label>
                     <Input 
                       id="image-name" 
                       value={imageName} 
                       onChange={(e) => setImageName(e.target.value)} 
                       placeholder="Enter a name for your image"
-                      className="flex-1"
                     />
                   </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => document.getElementById("file-input")?.click()}>
-                      <Upload className="mr-2 h-4 w-4" /> Select New Image
+                  
+                  <div className="grid grid-cols-1 gap-2 mt-4">
+                    <Button 
+                      onClick={startEditing} 
+                      className="w-full gap-2"
+                      variant="default"
+                    >
+                      <Edit className="h-4 w-4" /> Edit Image
                     </Button>
                     
-                    <Button onClick={saveToLocalStorage} variant="secondary">
-                      <Save className="mr-2 h-4 w-4" /> Save to Browser
+                    <Button 
+                      onClick={saveToLocalStorage} 
+                      variant="secondary" 
+                      className="w-full gap-2"
+                    >
+                      <Save className="h-4 w-4" /> Save to Browser
                     </Button>
                     
-                    <Button onClick={handleDownload} variant="secondary">
-                      <Download className="mr-2 h-4 w-4" /> Save to Device
+                    <Button 
+                      onClick={handleDownload} 
+                      variant="secondary" 
+                      className="w-full gap-2"
+                    >
+                      <Download className="h-4 w-4" /> Download
                     </Button>
                     
                     <Button 
                       onClick={handleSaveToGoogleDrive} 
                       disabled={!isAuthenticated || isSaving}
+                      className="w-full gap-2"
                     >
                       {isSaving ? (
                         <>
-                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          <RefreshCw className="h-4 w-4 animate-spin" />
                           Saving...
                         </>
                       ) : (
                         <>
-                          <CloudUpload className="mr-2 h-4 w-4" />
+                          <CloudUpload className="h-4 w-4" />
                           Save to Google Drive
                         </>
                       )}
                     </Button>
-
-                    <Dialog open={isShowingSavedDialog} onOpenChange={setIsShowingSavedDialog}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline">
-                          <ImageIcon className="mr-2 h-4 w-4" /> Open Saved Edits
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent 
-                        className="sm:max-w-[425px]" 
-                        aria-describedby="saved-edits-description"
-                      >
-                        <DialogHeader>
-                          <DialogTitle>Saved Edits</DialogTitle>
-                          <p id="saved-edits-description" className="text-sm text-muted-foreground">
-                            Your locally saved image edits.
-                          </p>
-                        </DialogHeader>
-                        <div className="grid gap-4 max-h-[60vh] overflow-y-auto py-4">
-                          {savedEdits.length > 0 ? (
-                            savedEdits.map((edit) => (
-                              <div
-                                key={edit.id}
-                                className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted/50"
-                                onClick={() => loadSavedEdit(edit)}
-                              >
-                                <div className="h-16 w-16 border rounded overflow-hidden">
-                                  <img
-                                    src={edit.thumbnail || edit.dataUrl}
-                                    alt={edit.name}
-                                    className="h-full w-full object-cover" 
-                                  />
-                                </div>
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium">{edit.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {new Date(edit.timestamp).toLocaleString()}
-                                  </p>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => handleDeleteEdit(edit.id, e)}
-                                  aria-label={`Delete ${edit.name}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-center text-muted-foreground">
-                              No saved edits found.
-                            </p>
-                          )}
-                        </div>
-                        <DialogFooter>
-                          <DialogClose asChild>
-                            <Button variant="outline">Close</Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
                   </div>
+                </>
+              ) : (
+                <div className="text-center text-muted-foreground">
+                  Upload an image to see available actions
                 </div>
+              )}
+              
+              {/* Saved Edits Dialog */}
+              <div className="mt-4 pt-4 border-t">
+                <Dialog open={isShowingSavedDialog} onOpenChange={setIsShowingSavedDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full gap-2">
+                      <ImageIcon className="h-4 w-4" /> Open Saved Edits
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent 
+                    className="sm:max-w-[425px]" 
+                    aria-describedby="saved-edits-description"
+                  >
+                    <DialogHeader>
+                      <DialogTitle>Saved Edits</DialogTitle>
+                      <p id="saved-edits-description" className="text-sm text-muted-foreground">
+                        Your locally saved image edits.
+                      </p>
+                    </DialogHeader>
+                    <div className="grid gap-4 max-h-[60vh] overflow-y-auto py-4">
+                      {savedEdits.length > 0 ? (
+                        savedEdits.map((edit) => (
+                          <div
+                            key={edit.id}
+                            className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted/50"
+                            onClick={() => loadSavedEdit(edit)}
+                          >
+                            <div className="h-16 w-16 border rounded overflow-hidden">
+                              <img
+                                src={edit.thumbnail || edit.dataUrl}
+                                alt={edit.name}
+                                className="h-full w-full object-cover" 
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{edit.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(edit.timestamp).toLocaleString()}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => handleDeleteEdit(edit.id, e)}
+                              aria-label={`Delete ${edit.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-center text-muted-foreground">
+                          No saved edits found.
+                        </p>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button variant="outline">Close</Button>
+                      </DialogClose>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              
+              {/* Error message display */}
+              {uploadError && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{uploadError}</AlertDescription>
+                </Alert>
               )}
             </CardContent>
           </Card>
-
-          {/* Editing Tools Panel */}
-          <div className="space-y-4">
-            {imageDataUrl && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Editing Tools</CardTitle>
-                  <CardDescription>Adjust and enhance your image</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {editingError && (
-                    <Alert variant="destructive" className="mb-4">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>{editingError}</AlertDescription>
-                    </Alert>
-                  )}
-                  <ImageEditorTools 
-                    imageDataUrl={originalImage || imageDataUrl}
-                    onImageChange={handleImageChange}
-                    onReset={handleResetImage}
-                  />
-                </CardContent>
-              </Card>
-            )}
-          </div>
         </div>
       </main>
     </div>
